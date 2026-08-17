@@ -1,71 +1,59 @@
 from dotenv import load_dotenv
-from typing import List
-from pydantic import BaseModel, Field
 
-load_dotenv()  # Load environment variables from .env file
+load_dotenv()
 
-from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage
-from langchain_groq import ChatGroq
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_tavily import TavilySearch
+from langchain.chat_models import init_chat_model
+from langchain.tools import tool
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langsmith import traceable
 
-
-class Source(BaseModel):
-    """Schema for a source used by the agent to answer a question."""
-
-    url: str = Field(description="The URL of the source.")
+MAX_ITERATIONS = 10
+MODEL = "llama-3.3-70b-versatile"
 
 
-class AgentResponse(BaseModel):
-    """Schema for the response returned by the agent."""
+@tool
+def get_product_price(product_name: str) -> float:
+    """
+    Look up the price of the product in the catalog.
+    """
+    print(f">> Executing a get_product_price(product_name='{product_name}')")
+    prices = {"laptop": 1299.99, "headphones": 148, "keyboard": 12337}
 
-    answer: str = Field(description="The agent answer to the query.")
-    sources: List[Source] = Field(
-        default_factory=list,
-        description="List of sources used by the agent to answer the query.",
+    return prices.get(product_name, 0)
+
+
+@tool
+def apply_discount(price: float, discount_tier: str) -> float:
+    """Apply discount tier to the price and return the final price.
+    Available Tiers : Bronze , Silver , Gold
+    """
+    print(
+        f">> Executing a apply_discount(price='{price}', discount_tier={discount_tier})"
+    )
+    discount_percentage = {"gold": 23, "bronze": 5, "silver": 12}
+
+    final_price = round(
+        price - (price * discount_percentage.get(discount_tier) / 100), 2
     )
 
-
-# tavily = TavilyClient()
-
-
-# Create a custom tool for searching the web using Tavily
-# @tool
-# def search(query: str) -> str:
-#     """
-#     Search the web for a query.
-#     Args:
-#         query (str): The search query.
-#     Returns:
-#         str: The search results.
-
-#     """
-#     response = tavily.search(query=query)
-#     return f"Search results for '{query}': {response}"
+    return final_price
 
 
-# Define the LLM instance
-# llm = ChatOpenAI()
-# llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash",
-)
+@traceable(name="LangChain Agent Loop")
+def run_agent(question: str):
+    tools = [get_product_price, apply_discount]
+    tools_dict = {t.name: t for t in tools}
 
-# Define a list of tools to be used by the agent
-tools = [TavilySearch()]
+    # Create a LLM instance with GROQ provider with compatible model
+    llm = init_chat_model(f"GROQ:{MODEL}", temperature=0)
+    # Provide a tools to LLM
+    llm_with_tools = llm.bind_tools(tools)
 
-# Create the agent with the LLM and tools
-agent = create_agent(model=llm, tools=tools, response_format=AgentResponse)
-
-
-def main():
-    # Example usage of the agent
-    # user_input = "What is the weather in Mumbai, India?"
-    user_input = "search for 3 job postings for an ai engineer using langchain in the bay area on linkedin and list their details?"
-    result = agent.invoke({"messages": HumanMessage(content=user_input)})
-    print(result)
+    print(f"Question : {question}")
+    print("*" * 60)
 
 
 if __name__ == "__main__":
-    main()
+    print("Hello LangChain Agent (.bind_tools)")
+
+    result = run_agent("What is the price of a laptop after applying a gold discount")
