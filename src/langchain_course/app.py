@@ -1,12 +1,31 @@
 from dotenv import load_dotenv
+from typing import List
+from pydantic import BaseModel, Field
 
 load_dotenv()  # Load environment variables from .env file
 
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
-from langchain.tools import tool
-from langchain_ollama import ChatOllama
+from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_tavily import TavilySearch
+
+
+class Source(BaseModel):
+    """Schema for a source used by the agent to answer a question."""
+
+    url: str = Field(description="The URL of the source.")
+
+
+class AgentResponse(BaseModel):
+    """Schema for the response returned by the agent."""
+
+    answer: str = Field(description="The agent answer to the query.")
+    sources: List[Source] = Field(
+        default_factory=list,
+        description="List of sources used by the agent to answer the query.",
+    )
+
 
 # tavily = TavilyClient()
 
@@ -28,13 +47,16 @@ from langchain_tavily import TavilySearch
 
 # Define the LLM instance
 # llm = ChatOpenAI()
-llm = ChatOllama(model="minimax-m3:cloud")
+# llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+llm = ChatGoogleGenerativeAI(
+    model="gemini-3.6-flash",
+)
 
 # Define a list of tools to be used by the agent
 tools = [TavilySearch()]
 
 # Create the agent with the LLM and tools
-agent = create_agent(model=llm, tools=tools)
+agent = create_agent(model=llm, tools=tools, response_format=AgentResponse)
 
 
 def main():
