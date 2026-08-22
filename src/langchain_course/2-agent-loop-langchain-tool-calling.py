@@ -6,12 +6,13 @@ from langchain.chat_models import init_chat_model
 from langchain.tools import tool
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langsmith import traceable
+from langsmith import traceable
 
 MAX_ITERATIONS = 10
 MODEL = "openai/gpt-oss-20b"
 
 
-@tool
+@traceable(run_type="tool")
 def get_product_price(product_name: str) -> float:
     """
     Look up the price of the product in the catalog.
@@ -22,7 +23,7 @@ def get_product_price(product_name: str) -> float:
     return prices.get(product_name, 0)
 
 
-@tool
+@traceable(run_type="tool")
 def apply_discount(price: float, discount_tier: str) -> float:
     """Apply discount tier to the price and return the final price.
     Available Tiers : Bronze , Silver , Gold
