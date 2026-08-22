@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-langchain-course = "langchain_course:agent-loop-raw-function-calling"
+langchain-course = "langchain_course:4-raw-react-prompt"
 
 [build-system]
 requires = ["uv_build>=0.12.3,<0.13.0"]

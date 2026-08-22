@@ -1,5 +1,6 @@
-import json
-
+# CHANGE 1: Add re + inspect — we'll parse tool calls from raw text instead of structured JSON.
+import re
+import inspect
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -28,7 +29,7 @@ def apply_discount(price: float, discount_tier: str) -> float:
     """Apply discount tier to the price and return the final price.
     Available Tiers : bronze , silver , gold
     """
-
+    price = float(price)
     print(
         f">> Executing a apply_discount(price='{price}', discount_tier={discount_tier})"
     )
@@ -41,75 +42,61 @@ def apply_discount(price: float, discount_tier: str) -> float:
     return final_price
 
 
-# Difference 2: Without @tool, we must MANUALLY define the JSON schema for each function.
-# This is exactly what LangChain's @tool decorator generates automatically
-# from the function's type hints and docstring.
-
-tools_for_llm = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_product_price",
-            "description": "Look up the price of the product in the catalog.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "product_name": {
-                        "type": "string",
-                        "description": "Name of the product",
-                    }
-                },
-                "required": ["product_name"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "apply_discount",
-            "description": "Apply discount tier to the price and return the final price.Available Tiers : bronze , silver , gold",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "price": {"type": "number", "description": "Price of the product"},
-                    "discount_tier": {
-                        "type": "string",
-                        "description": "Name of the discount tier",
-                    },
-                },
-                "required": ["price", "discount_tier"],
-                "additionalProperties": False,
-            },
-        },
-    },
-]
+tools = {
+    "get_product_price": get_product_price,
+    "apply_discount": apply_discount,
+}
 
 
-# NOTE: Ollama can also auto-generate these schemas if you pass the functions
-# directly as tools (similar to LangChain's @tool decorator):
-#   tools_for_llm = [get_product_price, apply_discount]
-# However, this requires your docstrings to follow the Google docstring format
-# so Ollama can parse parameter descriptions from the Args section. For example:
-#   def get_product_price(product: str) -> float:
-#       """Look up the price of a product in the catalog.
-#
-#       Args:
-#           product: The product name, e.g. 'laptop', 'headphones', 'keyboard'.
-#
-#       Returns:
-#           The price of the product, or 0 if not found.
-#       """
-# We keep the manual JSON version here so you can see what @tool hides from you.
+# CHANGE 3: Delete the JSON schemas. Tools now live inside the prompt as plain text.
+# We derive descriptions from the functions themselves using inspect.
 
-# --- Helper: traced Groq call ---
-# Difference 3: Without LangChain, we must manually trace LLM calls for LangSmith.
+
+def get_tool_descriptions(tools_dict):
+    descriptions = []
+    for tool_name, tool_function in tools_dict.items():
+        # __wrapped__ bypasses decorator wrappers (e.g., @traceable adds *, config=None)
+        original_function = getattr(tool_function, "__wrapped__", tool_function)
+        signature = inspect.signature(original_function)
+        docstring = inspect.getdoc(tool_function) or ""
+        descriptions.append(f"{tool_name}{signature} - {docstring}")
+    return "\n".join(descriptions)
+
+
+tool_descriptions = get_tool_descriptions(tools)
+tool_names = ", ".join(tools.keys())
+
+
+react_prompt = f"""
+Answer the following questions as best you can. You have access to the following tools:
+
+{tool_descriptions}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: the final answer to the original input question
+
+Begin!
+
+Question: {{question}}
+Thought:
+"""
+
+# CHANGE 4: Drop tools= from ollama.chat(). The LLM has no idea it's an agent —
+# all agency comes from the prompt above and our regex parsing below.
 
 
 @traceable(name="Groq Chat", run_type="llm")
-def groq_chat_traced(messages):
+def groq_chat_traced(model, messages, stop=None, temperature=0):
     return groq_client.chat.completions.create(
-        model=MODEL, tools=tools_for_llm, messages=messages
+        model=model, messages=messages, stop=stop, temperature=temperature
     )
 
 
@@ -119,96 +106,78 @@ def groq_chat_traced(messages):
 @traceable(name="LangChain Agent Loop")
 def run_agent(question: str):
 
-    tools_dict = {
-        "get_product_price": get_product_price,
-        "apply_discount": apply_discount,
-    }
-
     print(f"Question : {question}")
     print("*" * 60)
 
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a helpful shopping assistant. "
-                "You have access to a product catalog tool "
-                "and a discount tool.\n\n"
-                "STRICT RULES — you must follow these exactly:\n"
-                "1. NEVER guess or assume any product price. "
-                "You MUST call get_product_price first to get the real price.\n"
-                "2. Only call apply_discount AFTER you have received "
-                "a price from get_product_price. Pass the exact price "
-                "returned by get_product_price — do NOT pass a made-up number.\n"
-                "3. NEVER calculate discounts yourself using math. "
-                "Always use the apply_discount tool.\n"
-                "4. If the user does not specify a discount tier, "
-                "ask them which tier to use — do NOT assume one."
-            ),
-        },
-        {"role": "user", "content": question},
-    ]
+    # CHANGE 5: One prompt string replaces the system/user message split.
+    prompt = react_prompt.format(question=question)
+    scratchpad = ""
 
     for iterations in range(1, MAX_ITERATIONS + 1):
         print(f"Iteration {iterations} :")
 
-        response = groq_chat_traced(messages=messages)
-        ai_message = response.choices[0].message
-        tool_calls = ai_message.tool_calls or []
-        # If tool_calls is empty meaning LLM return the answer
-        if not tool_calls:
-            print(f"Final Answer : ", {ai_message.content})
-            return ai_message.content
+        full_prompt = prompt + scratchpad
 
-        # Process only the FIST tool call - force one tool per iteration
-        tool_call = tool_calls[0]
-        tool_name = tool_call.function.name
-        tool_args = json.loads(tool_call.function.arguments)
-        tool_id = tool_call.id
-
-        print(f"  [Toll Selected] {tool_name} with args: {tool_args}")
-
-        # Get the tool return by AI from tools dictionary
-        tool_to_use = tools_dict.get(tool_name)
-
-        # Check if the AI given tool is exist or not
-        if tool_to_use is None:
-            raise ValueError(f" Tool {tool_name} not found")
-
-        # Call the tool with args
-        observations = tool_to_use(**tool_args)
-
-        print(f"  [Tool Result] {observations}")
-
-        messages.append(
-            {
-                "role": "assistant",
-                "content": ai_message.content,
-                "tool_calls": [
-                    {
-                        "id": tool_call.id,
-                        "type": "function",
-                        "function": {
-                            "name": tool_name,
-                            "arguments": tool_call.function.arguments,
-                        },
-                    }
-                ],
-            }
-        )
-        messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": tool_id,
-                "content": str(observations),
-            }
+        # Stop token prevents the LLM from generating its own Observation —
+        # we inject the real tool result instead.
+        response = groq_chat_traced(
+            model=MODEL,
+            messages=[{"role": "user", "content": full_prompt}],
+            stop=["\nObservation"],
+            temperature=0,
         )
 
-    print(" ERROR: Max iteration reached without the final answer")
+        output = response.choices[0].message.content
+
+        print(f"LLM Output:\n{output}")
+
+        print(f"  [Parsing] Looking for Final Answer in LLM output...")
+        final_answer_match = re.search(r"Final Answer:\s*(.+)", output)
+
+        if final_answer_match:
+            final_answer = final_answer_match.group(1).strip()
+            print(f"  [Parsed] Final Answer: {final_answer}")
+            print("\n" + "=" * 60)
+            print(f"Final Answer: {final_answer}")
+            return final_answer
+
+        # CHANGE 6: Parse tool calls from raw text with regex — fragile if LLM doesn't follow format.
+        print(f"  [Parsing] Looking for Action and Action Input in LLM output...")
+
+        action_match = re.search(r"Action:\s*(.+)", output)
+        action_input_match = re.search(r"Action Input:\s*(.+)", output)
+
+        if not action_match or not action_input_match:
+            print(
+                "  [Parsing] ERROR: Could not parse Action/Action Input from LLM output"
+            )
+            break
+
+        tool_name = action_match.group(1).strip()
+        tool_input_raw = action_input_match.group(1).strip()
+
+        print(f"  [Tool Selected] {tool_name} with args: {tool_input_raw}")
+
+        # Split comma-separated args; strip key= prefix if LLM outputs key=value format
+        raw_args = [x.strip() for x in tool_input_raw.split(",")]
+        args = [x.split("=", 1)[-1].strip().strip("'\"") for x in raw_args]
+
+        print(f"  [Tool Executing] {tool_name}({args})...")
+        if tool_name not in tools:
+            observation = f"Error: Tool '{tool_name}' not found. Available tools: {list(tools.keys())}"
+        else:
+            observation = str(tools[tool_name](*args))
+
+        print(f"  [Tool Result] {observation}")
+
+        # CHANGE 7: History is one growing string re-sent every iteration (replaces messages.append).
+        scratchpad += f"{output}\nObservation: {observation}\nThought:"
+
+    print("ERROR: Max iterations reached without a final answer")
     return None
 
 
 if __name__ == "__main__":
     print("Hello LangChain Agent (.bind_tools)")
-
+    print()
     result = run_agent("What is the price of a laptop after applying a gold discount")
