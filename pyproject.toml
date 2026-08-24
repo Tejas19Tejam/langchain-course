@@ -1,0 +1,28 @@
+[project]
+name = "langchain-course"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Tejas19Tejam", email = "vasudevtejam@outlook.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "black>=25.1.0",
+    "isort>=6.0.1",
+    "langchain>=0.3.27",
+    "langchain-openai>=0.3.31",
+    "langchain-pinecone>=0.2.11",
+    "langchain-text-splitters>=1.1.2",
+    "langchain-unstructured>=1.0.1",
+    "langchainhub>=0.1.21",
+    "python-dotenv>=1.1.1",
+    "unstructured>=0.23.1",
+]
+
+[project.scripts]
+langchain-course = "langchain_course:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
