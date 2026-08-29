@@ -1,6 +1,11 @@
 {
     "cSpell.words": [
+        "ainvoke",
+        "astream",
         "dotenv",
-        "langchain"
+        "genai",
+        "langchain",
+        "LCEL",
+        "vectorstore"
     ]
 }
