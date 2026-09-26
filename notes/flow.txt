@@ -1,0 +1,14 @@
+Ingestion Pipeline
+
+Target to Ingest : 
+Langchain Latest Documentation inside Pinecone Vector Database
+
+
+Step 1 : Get the Langchain Latest Documentation from the Internet and Store it as content
+
+Step 2 :
+1. Load a content data and convert it to the Langchain document
+2. Split the document into multiple chunks
+3.
+
+
