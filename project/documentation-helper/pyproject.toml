@@ -1,0 +1,44 @@
+[project]
+name = "documentation-helper"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Tejas19Tejam", email = "vasudevtejam@outlook.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "beautifulsoup4>=4.15.0",
+    "black>=26.5.1",
+    "certifi>=2026.7.22",
+    "fastapi>=0.141.1",
+    "firecrawl-py>=4.40.0",
+    "ipykernel>=7.3.0",
+    "isort>=9.0.1",
+    "jinja2>=3.1.6",
+    "langchain-community>=0.4.2",
+    "langchain-groq>=1.1.3",
+    "langchain-huggingface>=1.2.2",
+    "langchain-pinecone>=0.2.13",
+    "langchain-tavily>=0.2.18",
+    "langchainhub>=0.1.21",
+    "langsmith>=0.11.2",
+    "nltk>=3.10.3",
+    "pillow>=12.3.0",
+    "pip>=26.2.1",
+    "python-dotenv>=1.2.3",
+    "sentence-transformers>=6.1.0",
+    "streamlit>=1.62.0",
+    "streamlit-chat>=0.1.1",
+    "tiktoken>=0.14.0",
+    "tqdm>=4.70.0",
+    "unstructured>=0.27.5",
+    "uvicorn>=0.52.4",
+]
+
+[project.scripts]
+documentation-helper = "documentation_helper:main"
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"
